@@ -1,79 +1,39 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import logo from './assets/logo.jpg'
-import station1 from './assets/products/station-1.jpg'
-import station2 from './assets/products/station-2.jpg'
-import case1 from './assets/products/case-1.jpg'
-import case2 from './assets/products/case-2.jpg'
-import case3 from './assets/products/case-3.jpg'
-import powerbank1 from './assets/products/powerbank-1.jpg'
-import powerbank2 from './assets/products/powerbank-2.jpg'
-import powerbank3 from './assets/products/powerbank-3.jpg'
 
-const categories = [
-  'Все',
-  'Чехлы',
-  'Кабели',
-  'Блоки питания',
-  'Станции 3 в 1',
-  'Повербанки',
-  'Кархолдеры',
-  'SSD',
-  'Штативы',
-]
+const API_BASE = 'https://api.yaapple.ru'
 
-const products = [
-  {
-    id: 1,
-    category: 'Станции 3 в 1',
-    badge: 'Новинка',
-    name: 'Зарядная станция 3 в 1 Magssory Signature Disc Pro для Apple Qi2 Midnight',
-    price: 21990,
-    images: [station1, station2],
-    features: [
-      'Эксклюзивный комплект в подарочной упаковке из премиальной экокожи',
-      'Зарядка 3 устройств Apple одновременно',
-      'Быстрая беспроводная зарядка 25 Вт',
-      'Полная совместимость: MagSafe, Qi2, Qi, PD, QC',
-      'Надёжное магнитное крепление и регулируемый угол наклона',
-      'Элегантный складной корпус',
-    ],
-  },
-  {
-    id: 2,
-    category: 'Чехлы',
-    badge: 'Премиум',
-    name: 'Magssory Aramid Frame Case for iPhone 17 Pro Max Pixel Blue',
-    price: 7990,
-    images: [case1, case2, case3],
-    features: [
-      'Кевларовый чехол, максимальная стойкость к ударам',
-      'Внутренняя микрониша для стикера банковской карты',
-      'Ультратонкий профиль, повторяет изгибы устройства',
-      'Шероховатая текстура карбона, матовая поверхность без следов',
-      'Полная совместимость с MagSafe, магниты N52',
-    ],
-  },
-  {
-    id: 3,
-    category: 'Повербанки',
-    badge: 'Qi2',
-    name: 'Беспроводной внешний аккумулятор Magssory Pride 10000 мАч с поддержкой Qi2',
-    price: 11990,
-    images: [powerbank1, powerbank2, powerbank3],
-    features: [
-      'Тонкий корпус из алюминиевого сплава, литьевого силикона и арамида',
-      'Стандарт зарядки Qi2',
-      'Ёмкость 10000 мАч',
-      'Совместимость с MagSafe',
-      'Магниты с обратной стороны корпуса для крепления кошельков с MagSafe',
-      'Беспроводная зарядка 15 Вт с магнитным креплением класса N52',
-      'Порт Type-C и поддержка сквозной зарядки',
-      'Индикация заряда диодами',
-      'Покрытие Soft-touch',
-    ],
-  },
-]
+function normalizeProduct(product) {
+  const images = Array.isArray(product.images)
+    ? product.images
+        .map((image) => image?.url || image?.path || image)
+        .filter(Boolean)
+        .map((url) =>
+          url.startsWith('http') ? url : `${API_BASE}${url}`,
+        )
+    : []
+
+  const description = String(product.description || '').trim()
+  const features = description
+    ? description
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+    : ['Описание скоро появится.']
+
+  return {
+    id: Number(product.id),
+    category: product.category || 'Без категории',
+    badge: product.badge || (product.is_featured ? 'Рекомендуем' : 'Новинка'),
+    name: product.name || 'Без названия',
+    price: Number(product.price) || 0,
+    oldPrice: product.old_price ? Number(product.old_price) : null,
+    stock: Number(product.stock) || 0,
+    images: images.length ? images : [logo],
+    features,
+  }
+}
 
 const money = (value) => `${value.toLocaleString('ru-RU')} ₽`
 const telegram = window.Telegram?.WebApp
@@ -88,6 +48,9 @@ function readStorage(key, fallback) {
 }
 
 function App() {
+  const [products, setProducts] = useState([])
+  const [productsLoading, setProductsLoading] = useState(true)
+  const [productsError, setProductsError] = useState('')
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState('Все')
   const [cart, setCart] = useState(() =>
@@ -105,6 +68,52 @@ function App() {
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerComment, setCustomerComment] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    async function loadProducts() {
+      try {
+        setProductsLoading(true)
+        setProductsError('')
+
+        const response = await fetch(`${API_BASE}/api/products`, {
+          signal: controller.signal,
+          headers: { Accept: 'application/json' },
+        })
+
+        if (!response.ok) {
+          throw new Error(`Ошибка загрузки: ${response.status}`)
+        }
+
+        const data = await response.json()
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray(data.products)
+            ? data.products
+            : []
+
+        setProducts(
+          list
+            .filter((product) => product.is_active !== 0)
+            .map(normalizeProduct),
+        )
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error(error)
+          setProductsError('Не удалось загрузить товары. Попробуйте обновить страницу.')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setProductsLoading(false)
+        }
+      }
+    }
+
+    loadProducts()
+
+    return () => controller.abort()
+  }, [])
 
   useEffect(() => {
     if (!telegram) {
@@ -146,6 +155,14 @@ function App() {
     )
   }, [favorites])
 
+  const categories = useMemo(() => {
+    const productCategories = products
+      .map((product) => product.category)
+      .filter(Boolean)
+
+    return ['Все', ...new Set(productCategories)]
+  }, [products])
+
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const matchesSearch = product.name
@@ -165,7 +182,7 @@ function App() {
         matchesFavorites
       )
     })
-  }, [search, activeCategory, showFavorites, favorites])
+  }, [products, search, activeCategory, showFavorites, favorites])
 
   const cartItems = useMemo(() => {
     return Object.entries(cart)
@@ -180,7 +197,7 @@ function App() {
         }
       })
       .filter((item) => item.product && item.quantity > 0)
-  }, [cart])
+  }, [cart, products])
 
   const cartCount = cartItems.reduce(
     (total, item) => total + item.quantity,
@@ -399,6 +416,14 @@ function App() {
             <span>{filteredProducts.length} шт.</span>
           </div>
 
+          {productsLoading && (
+            <p className="empty-message">Загружаем товары…</p>
+          )}
+
+          {productsError && (
+            <p className="empty-message">{productsError}</p>
+          )}
+
           <div className="products">
             {filteredProducts.map((product) => (
               <article
@@ -460,7 +485,7 @@ function App() {
             ))}
           </div>
 
-          {filteredProducts.length === 0 && (
+          {!productsLoading && !productsError && filteredProducts.length === 0 && (
             <p className="empty-message">
               Здесь пока ничего нет.
             </p>
