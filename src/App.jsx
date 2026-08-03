@@ -15,6 +15,7 @@ function normalizeProduct(product) {
     : []
 
   const description = String(product.description || '').trim()
+
   const features = description
     ? description
         .split(/\r?\n/)
@@ -25,17 +26,23 @@ function normalizeProduct(product) {
   return {
     id: Number(product.id),
     category: product.category_name || 'Без категории',
-    badge: product.badge || (product.is_featured ? 'Рекомендуем' : 'Новинка'),
+    badge:
+      product.badge ||
+      (product.is_featured ? 'Рекомендуем' : 'Новинка'),
     name: product.name || 'Без названия',
     price: Number(product.price) || 0,
-    oldPrice: product.old_price ? Number(product.old_price) : null,
+    oldPrice: product.old_price
+      ? Number(product.old_price)
+      : null,
     stock: Number(product.stock) || 0,
     images: images.length ? images : [logo],
     features,
   }
 }
 
-const money = (value) => `${value.toLocaleString('ru-RU')} ₽`
+const money = (value) =>
+  `${value.toLocaleString('ru-RU')} ₽`
+
 const telegram = window.Telegram?.WebApp
 
 function readStorage(key, fallback) {
@@ -49,59 +56,123 @@ function readStorage(key, fallback) {
 
 function App() {
   const [products, setProducts] = useState([])
-  const [productsLoading, setProductsLoading] = useState(true)
+  const [storeCategories, setStoreCategories] = useState([])
+  const [productsLoading, setProductsLoading] =
+    useState(true)
   const [productsError, setProductsError] = useState('')
   const [search, setSearch] = useState('')
-  const [activeCategory, setActiveCategory] = useState('Все')
+  const [activeCategory, setActiveCategory] =
+    useState('Все')
+
   const [cart, setCart] = useState(() =>
     readStorage('yablochniy-cart', {}),
   )
+
   const [favorites, setFavorites] = useState(() =>
     readStorage('yablochniy-favorites', []),
   )
-  const [selectedProduct, setSelectedProduct] = useState(null)
+
+  const [selectedProduct, setSelectedProduct] =
+    useState(null)
+
   const [selectedImage, setSelectedImage] = useState(0)
   const [cartOpen, setCartOpen] = useState(false)
-  const [showFavorites, setShowFavorites] = useState(false)
-  const [telegramUser, setTelegramUser] = useState(null)
-  const [checkoutOpen, setCheckoutOpen] = useState(false)
+
+  const [showFavorites, setShowFavorites] =
+    useState(false)
+
+  const [telegramUser, setTelegramUser] =
+    useState(null)
+
+  const [checkoutOpen, setCheckoutOpen] =
+    useState(false)
+
   const [customerName, setCustomerName] = useState('')
-  const [customerPhone, setCustomerPhone] = useState('')
-  const [customerComment, setCustomerComment] = useState('')
+  const [customerPhone, setCustomerPhone] =
+    useState('')
+
+  const [customerComment, setCustomerComment] =
+    useState('')
 
   useEffect(() => {
     const controller = new AbortController()
 
-    async function loadProducts() {
+    async function loadStoreData() {
       try {
         setProductsLoading(true)
         setProductsError('')
 
-        const response = await fetch(`${API_BASE}/api/products`, {
-          signal: controller.signal,
-          headers: { Accept: 'application/json' },
-        })
+        const [productsResponse, categoriesResponse] =
+          await Promise.all([
+            fetch(`${API_BASE}/api/products`, {
+              signal: controller.signal,
+              headers: {
+                Accept: 'application/json',
+              },
+            }),
 
-        if (!response.ok) {
-          throw new Error(`Ошибка загрузки: ${response.status}`)
+            fetch(`${API_BASE}/api/categories`, {
+              signal: controller.signal,
+              headers: {
+                Accept: 'application/json',
+              },
+            }),
+          ])
+
+        if (!productsResponse.ok) {
+          throw new Error(
+            `Ошибка загрузки товаров: ${productsResponse.status}`,
+          )
         }
 
-        const data = await response.json()
-        const list = Array.isArray(data)
-          ? data
-          : Array.isArray(data.products)
-            ? data.products
+        if (!categoriesResponse.ok) {
+          throw new Error(
+            `Ошибка загрузки категорий: ${categoriesResponse.status}`,
+          )
+        }
+
+        const productsData =
+          await productsResponse.json()
+
+        const categoriesData =
+          await categoriesResponse.json()
+
+        const productsList = Array.isArray(productsData)
+          ? productsData
+          : Array.isArray(productsData.products)
+            ? productsData.products
+            : []
+
+        const categoriesList =
+          Array.isArray(categoriesData)
+            ? categoriesData
             : []
 
         setProducts(
-          list
-            .filter((product) => product.is_active !== 0)
+          productsList
+            .filter(
+              (product) =>
+                product.is_active !== 0 &&
+                product.is_active !== false,
+            )
             .map(normalizeProduct),
+        )
+
+        setStoreCategories(
+          categoriesList.filter(
+            (category) =>
+              category.is_active === true ||
+              category.is_active === 1 ||
+              category.is_active === '1',
+          ),
         )
       } catch (error) {
         if (error.name !== 'AbortError') {
           console.error(error)
-          setProductsError('Не удалось загрузить товары. Попробуйте обновить страницу.')
+
+          setProductsError(
+            'Не удалось загрузить товары. Попробуйте обновить страницу.',
+          )
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -110,7 +181,7 @@ function App() {
       }
     }
 
-    loadProducts()
+    loadStoreData()
 
     return () => controller.abort()
   }, [])
@@ -124,8 +195,10 @@ function App() {
     telegram.expand()
 
     const user = telegram.initDataUnsafe?.user
+
     if (user) {
       setTelegramUser(user)
+
       setCustomerName(
         [user.first_name, user.last_name]
           .filter(Boolean)
@@ -137,7 +210,8 @@ function App() {
       telegram.setHeaderColor('#ffffff')
       telegram.setBackgroundColor('#ffffff')
     } catch {
-      // Старые клиенты Telegram могут не поддерживать эти методы.
+      // Старые версии Telegram могут
+      // не поддерживать эти методы.
     }
   }, [])
 
@@ -156,14 +230,53 @@ function App() {
   }, [favorites])
 
   const categories = useMemo(() => {
-    const productCategories = products
-      .map((product) => product.category)
-      .filter(Boolean)
+    const productCategoryNames = new Set(
+      products
+        .map((product) => product.category)
+        .filter(Boolean),
+    )
 
-    return ['Все', ...new Set(productCategories)]
-  }, [products])
+    const visibleCategories = storeCategories
+      .map((category) => category.name)
+      .filter(
+        (name) =>
+          name &&
+          productCategoryNames.has(name),
+      )
+
+    const result = [
+      'Все',
+      ...new Set(visibleCategories),
+    ]
+
+    if (
+      productCategoryNames.has('Без категории') &&
+      !result.includes('Без категории')
+    ) {
+      result.push('Без категории')
+    }
+
+    return result
+  }, [products, storeCategories])
+
+  useEffect(() => {
+    if (!categories.includes(activeCategory)) {
+      setActiveCategory('Все')
+    }
+  }, [categories, activeCategory])
 
   const filteredProducts = useMemo(() => {
+    const hiddenCategoryNames = new Set(
+      storeCategories
+        .filter(
+          (category) =>
+            category.is_active === false ||
+            category.is_active === 0 ||
+            category.is_active === '0',
+        )
+        .map((category) => category.name),
+    )
+
     return products.filter((product) => {
       const matchesSearch = product.name
         .toLowerCase()
@@ -174,21 +287,35 @@ function App() {
         product.category === activeCategory
 
       const matchesFavorites =
-        !showFavorites || favorites.includes(product.id)
+        !showFavorites ||
+        favorites.includes(product.id)
+
+      const categoryIsVisible =
+        product.category === 'Без категории' ||
+        !hiddenCategoryNames.has(product.category)
 
       return (
         matchesSearch &&
         matchesCategory &&
-        matchesFavorites
+        matchesFavorites &&
+        categoryIsVisible
       )
     })
-  }, [products, search, activeCategory, showFavorites, favorites])
+  }, [
+    products,
+    storeCategories,
+    search,
+    activeCategory,
+    showFavorites,
+    favorites,
+  ])
 
   const cartItems = useMemo(() => {
     return Object.entries(cart)
       .map(([productId, quantity]) => {
         const product = products.find(
-          (item) => item.id === Number(productId),
+          (item) =>
+            item.id === Number(productId),
         )
 
         return {
@@ -196,17 +323,22 @@ function App() {
           quantity,
         }
       })
-      .filter((item) => item.product && item.quantity > 0)
+      .filter(
+        (item) =>
+          item.product && item.quantity > 0,
+      )
   }, [cart, products])
 
   const cartCount = cartItems.reduce(
-    (total, item) => total + item.quantity,
+    (total, item) =>
+      total + item.quantity,
     0,
   )
 
   const cartTotal = cartItems.reduce(
     (total, item) =>
-      total + item.product.price * item.quantity,
+      total +
+      item.product.price * item.quantity,
     0,
   )
 
@@ -217,7 +349,9 @@ function App() {
   function toggleFavorite(productId) {
     setFavorites((current) =>
       current.includes(productId)
-        ? current.filter((id) => id !== productId)
+        ? current.filter(
+            (id) => id !== productId,
+          )
         : [...current, productId],
     )
 
@@ -227,18 +361,25 @@ function App() {
   function addToCart(product) {
     setCart((currentCart) => ({
       ...currentCart,
-      [product.id]: (currentCart[product.id] || 0) + 1,
+      [product.id]:
+        (currentCart[product.id] || 0) + 1,
     }))
 
     haptic()
   }
 
-  function changeQuantity(productId, difference) {
+  function changeQuantity(
+    productId,
+    difference,
+  ) {
     setCart((currentCart) => {
       const nextQuantity =
-        (currentCart[productId] || 0) + difference
+        (currentCart[productId] || 0) +
+        difference
 
-      const nextCart = { ...currentCart }
+      const nextCart = {
+        ...currentCart,
+      }
 
       if (nextQuantity <= 0) {
         delete nextCart[productId]
@@ -252,8 +393,12 @@ function App() {
 
   function removeFromCart(productId) {
     setCart((currentCart) => {
-      const nextCart = { ...currentCart }
+      const nextCart = {
+        ...currentCart,
+      }
+
       delete nextCart[productId]
+
       return nextCart
     })
   }
@@ -264,16 +409,23 @@ function App() {
   }
 
   function openCheckout() {
-    if (cartItems.length === 0) return
+    if (cartItems.length === 0) {
+      return
+    }
+
     setCartOpen(false)
     setCheckoutOpen(true)
   }
 
   function checkoutInTelegram() {
-    if (!customerName.trim() || !customerPhone.trim()) {
+    if (
+      !customerName.trim() ||
+      !customerPhone.trim()
+    ) {
       telegram?.showAlert?.(
         'Заполните имя и номер телефона.',
       )
+
       return
     }
 
@@ -285,25 +437,44 @@ function App() {
     ]
 
     if (telegramUser?.username) {
-      lines.push(`Telegram: @${telegramUser.username}`)
+      lines.push(
+        `Telegram: @${telegramUser.username}`,
+      )
     }
 
     if (customerComment.trim()) {
-      lines.push(`Комментарий: ${customerComment.trim()}`)
+      lines.push(
+        `Комментарий: ${customerComment.trim()}`,
+      )
     }
 
     lines.push('', 'Товары:')
 
-    cartItems.forEach(({ product, quantity }, index) => {
-      lines.push(`${index + 1}. ${product.name}`)
-      lines.push(`Количество: ${quantity}`)
-      lines.push(`Сумма: ${money(product.price * quantity)}`, '')
-    })
+    cartItems.forEach(
+      ({ product, quantity }, index) => {
+        lines.push(
+          `${index + 1}. ${product.name}`,
+        )
 
-    lines.push(`Итого: ${money(cartTotal)}`)
+        lines.push(
+          `Количество: ${quantity}`,
+        )
+
+        lines.push(
+          `Сумма: ${money(
+            product.price * quantity,
+          )}`,
+          '',
+        )
+      },
+    )
+
+    lines.push(
+      `Итого: ${money(cartTotal)}`,
+    )
 
     const url =
-      `https://t.me/new_yaapple?text=` +
+      'https://t.me/new_yaapple?text=' +
       encodeURIComponent(lines.join('\n'))
 
     if (telegram?.openTelegramLink) {
@@ -329,7 +500,8 @@ function App() {
 
             {telegramUser?.first_name && (
               <span className="telegram-user">
-                Привет, {telegramUser.first_name} 👋
+                Привет,{' '}
+                {telegramUser.first_name} 👋
               </span>
             )}
           </div>
@@ -351,11 +523,13 @@ function App() {
           </p>
 
           <h2>
-            Технологии, которые дополняют ваш iPhone
+            Технологии, которые дополняют
+            ваш iPhone
           </h2>
 
           <p className="hero-description">
-            Премиальные аксессуары MagSafe, Qi2 и USB‑C.
+            Премиальные аксессуары MagSafe,
+            Qi2 и USB-C.
           </p>
         </section>
 
@@ -372,22 +546,36 @@ function App() {
 
         <div className="view-buttons">
           <button
-            className={!showFavorites ? 'view-button active' : 'view-button'}
-            onClick={() => setShowFavorites(false)}
+            className={
+              !showFavorites
+                ? 'view-button active'
+                : 'view-button'
+            }
+            onClick={() =>
+              setShowFavorites(false)
+            }
           >
             Все товары
           </button>
 
           <button
-            className={showFavorites ? 'view-button active' : 'view-button'}
-            onClick={() => setShowFavorites(true)}
+            className={
+              showFavorites
+                ? 'view-button active'
+                : 'view-button'
+            }
+            onClick={() =>
+              setShowFavorites(true)
+            }
           >
             Избранное · {favorites.length}
           </button>
         </div>
 
         <section>
-          <h2 className="section-title">Категории</h2>
+          <h2 className="section-title">
+            Категории
+          </h2>
 
           <div className="categories">
             {categories.map((category) => (
@@ -411,92 +599,123 @@ function App() {
         <section>
           <div className="section-line">
             <h2 className="section-title">
-              {showFavorites ? 'Избранное' : 'Товары'}
+              {showFavorites
+                ? 'Избранное'
+                : 'Товары'}
             </h2>
-            <span>{filteredProducts.length} шт.</span>
+
+            <span>
+              {filteredProducts.length} шт.
+            </span>
           </div>
 
           {productsLoading && (
-            <p className="empty-message">Загружаем товары…</p>
+            <p className="empty-message">
+              Загружаем товары…
+            </p>
           )}
 
           {productsError && (
-            <p className="empty-message">{productsError}</p>
+            <p className="empty-message">
+              {productsError}
+            </p>
           )}
 
           <div className="products">
-            {filteredProducts.map((product) => (
-              <article
-                className="product-card"
-                key={product.id}
-              >
-                <button
-                  className="product-image"
-                  onClick={() => openProduct(product)}
+            {filteredProducts.map(
+              (product) => (
+                <article
+                  className="product-card"
+                  key={product.id}
                 >
-                  <span className="badge">
-                    {product.badge}
-                  </span>
-
-                  <img
-                    src={product.images[0]}
-                    alt={product.name}
-                  />
-                </button>
-
-                <button
-                  className={
-                    favorites.includes(product.id)
-                      ? 'favorite-button active'
-                      : 'favorite-button'
-                  }
-                  onClick={() => toggleFavorite(product.id)}
-                  aria-label="Добавить в избранное"
-                >
-                  {favorites.includes(product.id) ? '♥' : '♡'}
-                </button>
-
-                <p className="product-category">
-                  {product.category}
-                </p>
-
-                <h3>{product.name}</h3>
-
-                <strong className="product-price">
-                  {money(product.price)}
-                </strong>
-
-                <div className="product-actions">
                   <button
-                    className="details-button"
-                    onClick={() => openProduct(product)}
+                    className="product-image"
+                    onClick={() =>
+                      openProduct(product)
+                    }
                   >
-                    Подробнее
+                    <span className="badge">
+                      {product.badge}
+                    </span>
+
+                    <img
+                      src={product.images[0]}
+                      alt={product.name}
+                    />
                   </button>
 
                   <button
-                    className="add-button"
-                    onClick={() => addToCart(product)}
+                    className={
+                      favorites.includes(
+                        product.id,
+                      )
+                        ? 'favorite-button active'
+                        : 'favorite-button'
+                    }
+                    onClick={() =>
+                      toggleFavorite(
+                        product.id,
+                      )
+                    }
+                    aria-label="Добавить в избранное"
                   >
-                    В корзину
+                    {favorites.includes(
+                      product.id,
+                    )
+                      ? '♥'
+                      : '♡'}
                   </button>
-                </div>
-              </article>
-            ))}
+
+                  <p className="product-category">
+                    {product.category}
+                  </p>
+
+                  <h3>{product.name}</h3>
+
+                  <strong className="product-price">
+                    {money(product.price)}
+                  </strong>
+
+                  <div className="product-actions">
+                    <button
+                      className="details-button"
+                      onClick={() =>
+                        openProduct(product)
+                      }
+                    >
+                      Подробнее
+                    </button>
+
+                    <button
+                      className="add-button"
+                      onClick={() =>
+                        addToCart(product)
+                      }
+                    >
+                      В корзину
+                    </button>
+                  </div>
+                </article>
+              ),
+            )}
           </div>
 
-          {!productsLoading && !productsError && filteredProducts.length === 0 && (
-            <p className="empty-message">
-              Здесь пока ничего нет.
-            </p>
-          )}
+          {!productsLoading &&
+            !productsError &&
+            filteredProducts.length === 0 && (
+              <p className="empty-message">
+                Здесь пока ничего нет.
+              </p>
+            )}
         </section>
 
         <section className="manager">
           <div>
             <h2>Нужна помощь?</h2>
+
             <p>
-              Напишите нашему менеджеру в Telegram
+              Напишите нашему менеджеру
+              в Telegram
             </p>
           </div>
 
@@ -513,7 +732,9 @@ function App() {
       {selectedProduct && (
         <div
           className="modal-backdrop"
-          onClick={() => setSelectedProduct(null)}
+          onClick={() =>
+            setSelectedProduct(null)
+          }
         >
           <div
             className="modal"
@@ -523,7 +744,9 @@ function App() {
           >
             <button
               className="close-button"
-              onClick={() => setSelectedProduct(null)}
+              onClick={() =>
+                setSelectedProduct(null)
+              }
             >
               ×
             </button>
@@ -531,7 +754,9 @@ function App() {
             <img
               className="modal-main-image"
               src={
-                selectedProduct.images[selectedImage]
+                selectedProduct.images[
+                  selectedImage
+                ]
               }
               alt={selectedProduct.name}
             />
@@ -540,7 +765,7 @@ function App() {
               {selectedProduct.images.map(
                 (image, index) => (
                   <button
-                    key={image}
+                    key={`${image}-${index}`}
                     className={
                       selectedImage === index
                         ? 'thumbnail active'
@@ -560,7 +785,9 @@ function App() {
               {selectedProduct.category}
             </p>
 
-            <h2>{selectedProduct.name}</h2>
+            <h2>
+              {selectedProduct.name}
+            </h2>
 
             <strong className="modal-price">
               {money(selectedProduct.price)}
@@ -568,8 +795,12 @@ function App() {
 
             <ul>
               {selectedProduct.features.map(
-                (feature) => (
-                  <li key={feature}>{feature}</li>
+                (feature, index) => (
+                  <li
+                    key={`${feature}-${index}`}
+                  >
+                    {feature}
+                  </li>
                 ),
               )}
             </ul>
@@ -589,7 +820,9 @@ function App() {
       {cartOpen && (
         <div
           className="modal-backdrop"
-          onClick={() => setCartOpen(false)}
+          onClick={() =>
+            setCartOpen(false)
+          }
         >
           <div
             className="modal cart-modal"
@@ -599,7 +832,9 @@ function App() {
           >
             <button
               className="close-button"
-              onClick={() => setCartOpen(false)}
+              onClick={() =>
+                setCartOpen(false)
+              }
             >
               ×
             </button>
@@ -614,20 +849,30 @@ function App() {
               <>
                 <div className="cart-list">
                   {cartItems.map(
-                    ({ product, quantity }) => (
+                    ({
+                      product,
+                      quantity,
+                    }) => (
                       <article
                         className="cart-item"
                         key={product.id}
                       >
                         <img
-                          src={product.images[0]}
+                          src={
+                            product.images[0]
+                          }
                           alt={product.name}
                         />
 
                         <div className="cart-item-info">
-                          <h3>{product.name}</h3>
+                          <h3>
+                            {product.name}
+                          </h3>
+
                           <strong>
-                            {money(product.price)}
+                            {money(
+                              product.price,
+                            )}
                           </strong>
 
                           <div className="quantity">
@@ -642,7 +887,9 @@ function App() {
                               −
                             </button>
 
-                            <span>{quantity}</span>
+                            <span>
+                              {quantity}
+                            </span>
 
                             <button
                               onClick={() =>
@@ -660,7 +907,9 @@ function App() {
                         <button
                           className="remove-button"
                           onClick={() =>
-                            removeFromCart(product.id)
+                            removeFromCart(
+                              product.id,
+                            )
                           }
                         >
                           Удалить
@@ -672,7 +921,10 @@ function App() {
 
                 <div className="cart-total">
                   <span>Итого</span>
-                  <strong>{money(cartTotal)}</strong>
+
+                  <strong>
+                    {money(cartTotal)}
+                  </strong>
                 </div>
 
                 <button
@@ -686,18 +938,25 @@ function App() {
           </div>
         </div>
       )}
+
       {checkoutOpen && (
         <div
           className="modal-backdrop"
-          onClick={() => setCheckoutOpen(false)}
+          onClick={() =>
+            setCheckoutOpen(false)
+          }
         >
           <div
             className="modal checkout-modal"
-            onClick={(event) => event.stopPropagation()}
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
             <button
               className="close-button"
-              onClick={() => setCheckoutOpen(false)}
+              onClick={() =>
+                setCheckoutOpen(false)
+              }
             >
               ×
             </button>
@@ -710,10 +969,13 @@ function App() {
 
             <label className="checkout-field">
               <span>Имя</span>
+
               <input
                 value={customerName}
                 onChange={(event) =>
-                  setCustomerName(event.target.value)
+                  setCustomerName(
+                    event.target.value,
+                  )
                 }
                 placeholder="Как к вам обращаться?"
               />
@@ -721,11 +983,14 @@ function App() {
 
             <label className="checkout-field">
               <span>Телефон</span>
+
               <input
                 type="tel"
                 value={customerPhone}
                 onChange={(event) =>
-                  setCustomerPhone(event.target.value)
+                  setCustomerPhone(
+                    event.target.value,
+                  )
                 }
                 placeholder="+7 999 000-00-00"
               />
@@ -733,10 +998,13 @@ function App() {
 
             <label className="checkout-field">
               <span>Комментарий</span>
+
               <textarea
                 value={customerComment}
                 onChange={(event) =>
-                  setCustomerComment(event.target.value)
+                  setCustomerComment(
+                    event.target.value,
+                  )
                 }
                 placeholder="Цвет, модель устройства, пожелания..."
                 rows="4"
@@ -744,8 +1012,13 @@ function App() {
             </label>
 
             <div className="checkout-summary">
-              <span>Товаров: {cartCount}</span>
-              <strong>{money(cartTotal)}</strong>
+              <span>
+                Товаров: {cartCount}
+              </span>
+
+              <strong>
+                {money(cartTotal)}
+              </strong>
             </div>
 
             <button
@@ -757,7 +1030,6 @@ function App() {
           </div>
         </div>
       )}
-
     </div>
   )
 }
