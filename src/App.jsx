@@ -24,7 +24,7 @@ function normalizeProduct(product) {
 
   return {
     id: Number(product.id),
-    category: product.category || 'Без категории',
+    category: product.category_name || 'Без категории',
     badge: product.badge || (product.is_featured ? 'Рекомендуем' : 'Новинка'),
     name: product.name || 'Без названия',
     price: Number(product.price) || 0,
