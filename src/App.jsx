@@ -57,12 +57,10 @@ function readStorage(key, fallback) {
 function App() {
   const [products, setProducts] = useState([])
   const [storeCategories, setStoreCategories] = useState([])
-  const [productsLoading, setProductsLoading] =
-    useState(true)
+  const [productsLoading, setProductsLoading] = useState(true)
   const [productsError, setProductsError] = useState('')
   const [search, setSearch] = useState('')
-  const [activeCategory, setActiveCategory] =
-    useState('Все')
+  const [activeCategory, setActiveCategory] = useState('Все')
 
   const [cart, setCart] = useState(() =>
     readStorage('yablochniy-cart', {}),
@@ -72,27 +70,15 @@ function App() {
     readStorage('yablochniy-favorites', []),
   )
 
-  const [selectedProduct, setSelectedProduct] =
-    useState(null)
-
+  const [selectedProduct, setSelectedProduct] = useState(null)
   const [selectedImage, setSelectedImage] = useState(0)
   const [cartOpen, setCartOpen] = useState(false)
-
-  const [showFavorites, setShowFavorites] =
-    useState(false)
-
-  const [telegramUser, setTelegramUser] =
-    useState(null)
-
-  const [checkoutOpen, setCheckoutOpen] =
-    useState(false)
-
+  const [showFavorites, setShowFavorites] = useState(false)
+  const [telegramUser, setTelegramUser] = useState(null)
+  const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [customerName, setCustomerName] = useState('')
-  const [customerPhone, setCustomerPhone] =
-    useState('')
-
-  const [customerComment, setCustomerComment] =
-    useState('')
+  const [customerPhone, setCustomerPhone] = useState('')
+  const [customerComment, setCustomerComment] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -131,11 +117,8 @@ function App() {
           )
         }
 
-        const productsData =
-          await productsResponse.json()
-
-        const categoriesData =
-          await categoriesResponse.json()
+        const productsData = await productsResponse.json()
+        const categoriesData = await categoriesResponse.json()
 
         const productsList = Array.isArray(productsData)
           ? productsData
@@ -143,10 +126,9 @@ function App() {
             ? productsData.products
             : []
 
-        const categoriesList =
-          Array.isArray(categoriesData)
-            ? categoriesData
-            : []
+        const categoriesList = Array.isArray(categoriesData)
+          ? categoriesData
+          : []
 
         setProducts(
           productsList
@@ -210,8 +192,7 @@ function App() {
       telegram.setHeaderColor('#ffffff')
       telegram.setBackgroundColor('#ffffff')
     } catch {
-      // Старые версии Telegram могут
-      // не поддерживать эти методы.
+      // Старые версии Telegram могут не поддерживать эти методы.
     }
   }, [])
 
@@ -229,9 +210,23 @@ function App() {
     )
   }, [favorites])
 
+  const visibleProducts = useMemo(() => {
+    const activeCategoryNames = new Set(
+      storeCategories.map((category) => category.name),
+    )
+
+    return products.filter((product) => {
+      if (product.category === 'Без категории') {
+        return true
+      }
+
+      return activeCategoryNames.has(product.category)
+    })
+  }, [products, storeCategories])
+
   const categories = useMemo(() => {
     const productCategoryNames = new Set(
-      products
+      visibleProducts
         .map((product) => product.category)
         .filter(Boolean),
     )
@@ -257,7 +252,7 @@ function App() {
     }
 
     return result
-  }, [products, storeCategories])
+  }, [visibleProducts, storeCategories])
 
   useEffect(() => {
     if (!categories.includes(activeCategory)) {
@@ -266,18 +261,7 @@ function App() {
   }, [categories, activeCategory])
 
   const filteredProducts = useMemo(() => {
-    const hiddenCategoryNames = new Set(
-      storeCategories
-        .filter(
-          (category) =>
-            category.is_active === false ||
-            category.is_active === 0 ||
-            category.is_active === '0',
-        )
-        .map((category) => category.name),
-    )
-
-    return products.filter((product) => {
+    return visibleProducts.filter((product) => {
       const matchesSearch = product.name
         .toLowerCase()
         .includes(search.toLowerCase())
@@ -290,20 +274,14 @@ function App() {
         !showFavorites ||
         favorites.includes(product.id)
 
-      const categoryIsVisible =
-        product.category === 'Без категории' ||
-        !hiddenCategoryNames.has(product.category)
-
       return (
         matchesSearch &&
         matchesCategory &&
-        matchesFavorites &&
-        categoryIsVisible
+        matchesFavorites
       )
     })
   }, [
-    products,
-    storeCategories,
+    visibleProducts,
     search,
     activeCategory,
     showFavorites,
@@ -313,7 +291,7 @@ function App() {
   const cartItems = useMemo(() => {
     return Object.entries(cart)
       .map(([productId, quantity]) => {
-        const product = products.find(
+        const product = visibleProducts.find(
           (item) =>
             item.id === Number(productId),
         )
@@ -327,7 +305,7 @@ function App() {
         (item) =>
           item.product && item.quantity > 0,
       )
-  }, [cart, products])
+  }, [cart, visibleProducts])
 
   const cartCount = cartItems.reduce(
     (total, item) =>
