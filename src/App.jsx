@@ -37,6 +37,7 @@ function normalizeProduct(product) {
     stock: Number(product.stock) || 0,
     images: images.length ? images : [logo],
     features,
+    instagramReelUrl: product.instagram_reel_url || '',
   }
 }
 
@@ -782,7 +783,17 @@ function App() {
                 ),
               )}
             </ul>
-
+{selectedProduct.instagramReelUrl && (
+  <a
+    href={selectedProduct.instagramReelUrl}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="add-button wide"
+    style={{ display: 'block', textAlign: 'center', marginBottom: '12px' }}
+  >
+    ▶ Смотреть Reels
+  </a>
+)}
             <button
               className="add-button wide"
               onClick={() =>
@@ -790,6 +801,7 @@ function App() {
               }
             >
               Добавить в корзину
+              
             </button>
           </div>
         </div>
